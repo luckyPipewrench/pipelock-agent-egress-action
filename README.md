@@ -73,6 +73,8 @@ Self-hosted runner note: the action creates or reuses local `pipelock-agent` and
 
 Supported Linux runners must provide passwordless sudo plus `ip`, `iptables`, `ip6tables`, `setpriv`, `unshare`, `curl`, `python3`, `ruby`, `realpath`, `getent`, `visudo`, `install`, `mount`, and `umount`.
 
+The hosted smoke workflow exercises allowed proxy traffic, direct DNS/raw TCP/HTTP denial, sudo escape denial, Docker socket masking, capability drop, path traversal rejection, trusted verification, and empty-chain failure handling.
+
 Outputs:
 
 - `audit-packet-path`
