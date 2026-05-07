@@ -31,6 +31,8 @@ DEBUG="false"
 
 RUNTIME_ROOT=""
 ACTION_WORK_ROOT=""
+SCRIPT_STAGING_DIR=""
+SCRIPT_RUN_PATH=""
 RUNTIME_BIN=""
 RUNTIME_CONFIG=""
 RUNTIME_KEYSTORE=""
@@ -133,6 +135,9 @@ cleanup() {
   if [[ -n "$ACTION_WORK_ROOT" ]]; then
     rm -rf "$ACTION_WORK_ROOT" >/dev/null 2>&1
   fi
+  if [[ -n "$SCRIPT_STAGING_DIR" ]]; then
+    sudo rm -rf "$SCRIPT_STAGING_DIR" >/dev/null 2>&1
+  fi
   if [[ -n "$SUDOERS_DENY_FILE" ]]; then
     sudo rm -f "$SUDOERS_DENY_FILE" >/dev/null 2>&1
   fi
@@ -233,6 +238,7 @@ HOST_PIPELOCK_BIN="$(resolve_pipelock_bin)"
 
 RUNTIME_ROOT="${RUNNER_TEMP:-/tmp}/pipelock-agent-egress-${GITHUB_RUN_ID:-local}-$$"
 ACTION_WORK_ROOT="${RUNNER_TEMP:-/tmp}/pipelock-agent-egress-work-${GITHUB_RUN_ID:-local}-$$"
+SCRIPT_STAGING_DIR="${RUNNER_TEMP:-/tmp}/pipelock-agent-egress-script-${GITHUB_RUN_ID:-local}-$$"
 RUNTIME_BIN="$RUNTIME_ROOT/bin/pipelock"
 RUNTIME_CONFIG="$RUNTIME_ROOT/config/action.yaml"
 RUNTIME_KEYSTORE="$RUNTIME_ROOT/keys"
@@ -247,6 +253,10 @@ trap cleanup EXIT
 
 mkdir -p "$ACTION_WORK_ROOT"/{export,logs}
 chmod 0700 "$ACTION_WORK_ROOT" "$ACTION_WORK_ROOT"/{export,logs}
+sudo mkdir -p "$SCRIPT_STAGING_DIR"
+sudo chmod 0755 "$SCRIPT_STAGING_DIR"
+SCRIPT_RUN_PATH="$SCRIPT_STAGING_DIR/$SCRIPT_BASENAME"
+sudo install -m 0555 -o root -g root "$SCRIPT_REAL" "$SCRIPT_RUN_PATH"
 sudo mkdir -p "$RUNTIME_ROOT"/{bin,config,keys,evidence}
 sudo chmod 0700 "$RUNTIME_ROOT" "$RUNTIME_ROOT"/{keys,evidence}
 sudo install -m 0555 -o root -g root "$HOST_PIPELOCK_BIN" "$RUNTIME_BIN"
@@ -463,7 +473,7 @@ setpriv \
   --inh-caps=-all \
   --ambient-caps=-all \
   -- bash "$@"
-' bash "$WORKDIR_REAL" "$AGENT_UID" "$AGENT_GID" "$AGENT_HOME" "$PROXY_URL" "$CA_BUNDLE" "$SCRIPT_REAL" "${SCRIPT_ARGV[@]}"
+' bash "$WORKDIR_REAL" "$AGENT_UID" "$AGENT_GID" "$AGENT_HOME" "$PROXY_URL" "$CA_BUNDLE" "$SCRIPT_RUN_PATH" "${SCRIPT_ARGV[@]}"
 AGENT_EXIT_CODE=$?
 set -e
 
