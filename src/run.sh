@@ -3,6 +3,7 @@
 set -Eeuo pipefail
 
 AGENT_USER="pipelock-agent"
+HOST_USER="pipelock-host"
 AGENT_NAME="action-ephemeral"
 RUN_SUFFIX="$$"
 NETNS="pipelock-agent-$RUN_SUFFIX"
@@ -37,6 +38,8 @@ RUNTIME_BIN=""
 RUNTIME_CONFIG=""
 MATERIALIZED_CONFIG=""
 RUNTIME_KEYSTORE=""
+RUNTIME_SIGNING_DIR=""
+RUNTIME_SIGNER_PRIVATE_KEY=""
 EVIDENCE_DIR=""
 POSTURE_PATH=""
 VERIFIER_OUTPUT=""
@@ -47,6 +50,7 @@ AGENT_EXIT_CODE=0
 VERIFIER_VERDICT="error"
 RECEIPT_COUNT=0
 CREATED_AGENT_USER="false"
+CREATED_HOST_USER="false"
 SUDOERS_DENY_FILE=""
 ACTION_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
@@ -136,6 +140,9 @@ cleanup() {
   fi
   if [[ "$CREATED_AGENT_USER" == "true" ]]; then
     sudo userdel -r "$AGENT_USER" >/dev/null 2>&1
+  fi
+  if [[ "$CREATED_HOST_USER" == "true" ]]; then
+    sudo userdel -r "$HOST_USER" >/dev/null 2>&1
   fi
 }
 
@@ -248,13 +255,15 @@ resolve_pipelock_bin() {
 HOST_PIPELOCK_BIN="$(resolve_pipelock_bin)"
 "$HOST_PIPELOCK_BIN" --version >/dev/null 2>&1 || die "pipelock binary failed --version: $HOST_PIPELOCK_BIN"
 
-RUNTIME_ROOT="${RUNNER_TEMP:-/tmp}/pipelock-agent-egress-${GITHUB_RUN_ID:-local}-$$"
+RUNTIME_ROOT="/tmp/pipelock-agent-egress-${GITHUB_RUN_ID:-local}-$$"
 ACTION_WORK_ROOT="${RUNNER_TEMP:-/tmp}/pipelock-agent-egress-work-${GITHUB_RUN_ID:-local}-$$"
 SCRIPT_STAGING_DIR="/tmp/pipelock-agent-egress-script-${GITHUB_RUN_ID:-local}-$$"
 RUNTIME_BIN="$RUNTIME_ROOT/bin/pipelock"
 RUNTIME_CONFIG="$RUNTIME_ROOT/config/action.yaml"
 MATERIALIZED_CONFIG="$ACTION_WORK_ROOT/action.yaml"
 RUNTIME_KEYSTORE="$RUNTIME_ROOT/keys"
+RUNTIME_SIGNING_DIR="$RUNTIME_ROOT/signing"
+RUNTIME_SIGNER_PRIVATE_KEY="$RUNTIME_SIGNING_DIR/id_ed25519"
 EVIDENCE_DIR="$RUNTIME_ROOT/evidence"
 POSTURE_PATH="$ACTION_WORK_ROOT/posture.json"
 VERIFIER_OUTPUT="$ACTION_WORK_ROOT/verifier.txt"
@@ -270,40 +279,75 @@ sudo mkdir -p "$SCRIPT_STAGING_DIR"
 sudo chmod 0755 "$SCRIPT_STAGING_DIR"
 SCRIPT_RUN_PATH="$SCRIPT_STAGING_DIR/$SCRIPT_BASENAME"
 sudo install -m 0555 -o root -g root "$SCRIPT_REAL" "$SCRIPT_RUN_PATH"
-sudo mkdir -p "$RUNTIME_ROOT"/{bin,config,keys,evidence}
-sudo chmod 0700 "$RUNTIME_ROOT" "$RUNTIME_ROOT"/{keys,evidence}
+sudo mkdir -p "$RUNTIME_ROOT"/{bin,config,keys,signing,evidence}
+sudo chmod 0755 "$RUNTIME_ROOT" "$RUNTIME_ROOT/bin"
+sudo chmod 0700 "$RUNTIME_ROOT"/{keys,signing,evidence}
 sudo install -m 0555 -o root -g root "$HOST_PIPELOCK_BIN" "$RUNTIME_BIN"
 
-ensure_agent_user() {
-  if id "$AGENT_USER" >/dev/null 2>&1; then
-    CREATED_AGENT_USER="false"
+ensure_unprivileged_user() {
+  local user="$1"
+  local shell="$2"
+  local created_var="$3"
+
+  if id "$user" >/dev/null 2>&1; then
+    printf -v "$created_var" '%s' "false"
   else
-    sudo useradd --system --create-home --shell /bin/bash "$AGENT_USER"
-    CREATED_AGENT_USER="true"
+    sudo useradd --system --create-home --shell "$shell" "$user"
+    printf -v "$created_var" '%s' "true"
   fi
 
   local groups
-  groups="$(id -nG "$AGENT_USER")"
+  groups="$(id -nG "$user")"
   for forbidden in sudo wheel docker kvm; do
     case " $groups " in
-      *" $forbidden "*) die "$AGENT_USER must not belong to privileged group $forbidden" ;;
+      *" $forbidden "*) die "$user must not belong to privileged group $forbidden" ;;
     esac
   done
+}
 
+write_sudoers_deny_file() {
   SUDOERS_DENY_FILE="/etc/sudoers.d/pipelock-agent-egress-action-$$"
-  printf '%s ALL=(ALL:ALL) !ALL\n' "$AGENT_USER" | sudo tee "$SUDOERS_DENY_FILE" >/dev/null
+  {
+    printf '%s ALL=(ALL:ALL) !ALL\n' "$AGENT_USER"
+    printf '%s ALL=(ALL:ALL) !ALL\n' "$HOST_USER"
+  } | sudo tee "$SUDOERS_DENY_FILE" >/dev/null
   sudo chmod 0440 "$SUDOERS_DENY_FILE"
   sudo visudo -cf "$SUDOERS_DENY_FILE" >/dev/null
 }
 
+ensure_agent_user() {
+  ensure_unprivileged_user "$AGENT_USER" /bin/bash CREATED_AGENT_USER
+}
+
+ensure_host_user() {
+  if [[ -x /usr/sbin/nologin ]]; then
+    ensure_unprivileged_user "$HOST_USER" /usr/sbin/nologin CREATED_HOST_USER
+  else
+    ensure_unprivileged_user "$HOST_USER" /bin/false CREATED_HOST_USER
+  fi
+}
+
 ensure_agent_user
+ensure_host_user
+write_sudoers_deny_file
+
 AGENT_UID="$(id -u "$AGENT_USER")"
 AGENT_GID="$(id -g "$AGENT_USER")"
 AGENT_HOME="$(getent passwd "$AGENT_USER" | cut -d: -f6)"
+HOST_UID="$(id -u "$HOST_USER")"
+HOST_GID="$(id -g "$HOST_USER")"
+HOST_HOME="$(getent passwd "$HOST_USER" | cut -d: -f6)"
+
+sudo chown root:"$HOST_GID" "$RUNTIME_ROOT/config" "$RUNTIME_SIGNING_DIR"
+sudo chmod 0750 "$RUNTIME_ROOT/config" "$RUNTIME_SIGNING_DIR"
+sudo chown "$HOST_UID":"$HOST_GID" "$EVIDENCE_DIR"
+sudo chmod 0700 "$EVIDENCE_DIR"
 
 if [[ -n "$SIGNER_PRIVATE_KEY_PATH" ]]; then
   SIGNER_PRIVATE_KEY_PATH="$(realpath -e "$SIGNER_PRIVATE_KEY_PATH")"
   sudo test -r "$SIGNER_PRIVATE_KEY_PATH" || die "signer private key is not readable by root: $SIGNER_PRIVATE_KEY_PATH"
+  sudo install -m 0640 -o root -g "$HOST_GID" "$SIGNER_PRIVATE_KEY_PATH" "$RUNTIME_SIGNER_PRIVATE_KEY"
+  SIGNER_PRIVATE_KEY_PATH="$RUNTIME_SIGNER_PRIVATE_KEY"
   if [[ -n "$SIGNER_PUBLIC_KEY" ]]; then
     VERIFY_SIGNER_KEY="$SIGNER_PUBLIC_KEY"
     TRUSTED_VERIFICATION="true"
@@ -313,9 +357,10 @@ else
     sed -n '1,80p' "$KEYGEN_OUTPUT" >&2 || true
     die "pipelock keygen failed; expected CLI: pipelock keygen <agent-name> --keystore <dir> --force"
   fi
-  SIGNER_PRIVATE_KEY_PATH="$RUNTIME_KEYSTORE/agents/$AGENT_NAME/id_ed25519"
+  KEYGEN_PRIVATE_KEY_PATH="$RUNTIME_KEYSTORE/agents/$AGENT_NAME/id_ed25519"
   EPHEMERAL_PUBLIC_KEY_PATH="$RUNTIME_KEYSTORE/agents/$AGENT_NAME/id_ed25519.pub"
-  sudo chmod 0600 "$SIGNER_PRIVATE_KEY_PATH"
+  sudo install -m 0640 -o root -g "$HOST_GID" "$KEYGEN_PRIVATE_KEY_PATH" "$RUNTIME_SIGNER_PRIVATE_KEY"
+  SIGNER_PRIVATE_KEY_PATH="$RUNTIME_SIGNER_PRIVATE_KEY"
   sudo chmod 0644 "$EPHEMERAL_PUBLIC_KEY_PATH"
   if [[ -n "$SIGNER_PUBLIC_KEY" ]]; then
     VERIFY_SIGNER_KEY="$SIGNER_PUBLIC_KEY"
@@ -324,6 +369,28 @@ else
     VERIFY_SIGNER_KEY="$EPHEMERAL_PUBLIC_KEY_PATH"
     TRUSTED_VERIFICATION="false"
   fi
+fi
+
+run_host_probe() {
+  sudo HOME="$HOST_HOME" USER="$HOST_USER" LOGNAME="$HOST_USER" setpriv \
+    --reuid "$HOST_UID" \
+    --regid "$HOST_GID" \
+    --clear-groups \
+    --no-new-privs \
+    --bounding-set=-all \
+    --inh-caps=-all \
+    --ambient-caps=-all \
+    -- "$@"
+}
+
+if [[ "$(run_host_probe id -u)" != "$HOST_UID" ]]; then
+  die "$HOST_USER did not drop to the expected uid"
+fi
+if run_host_probe sudo -n true >/dev/null 2>&1; then
+  die "$HOST_USER can invoke sudo; host proxy containment would be bypassable"
+fi
+if ! run_host_probe cat "$SIGNER_PRIVATE_KEY_PATH" >/dev/null 2>&1; then
+  die "$HOST_USER cannot read the runtime signing key"
 fi
 
 write_runtime_config() {
@@ -335,10 +402,32 @@ write_runtime_config() {
     --listen "$listen_addr" \
     --evidence-dir "$EVIDENCE_DIR" \
     --signing-key-path "$SIGNER_PRIVATE_KEY_PATH"
-  sudo install -m 0600 -o root -g root "$MATERIALIZED_CONFIG" "$RUNTIME_CONFIG"
+  sudo install -m 0640 -o root -g "$HOST_GID" "$MATERIALIZED_CONFIG" "$RUNTIME_CONFIG"
 }
 
 write_runtime_config
+
+if ! run_host_probe test -r "$RUNTIME_CONFIG" >/dev/null 2>&1; then
+  die "$HOST_USER cannot read the runtime config"
+fi
+if run_host_probe test -w "$RUNTIME_CONFIG" >/dev/null 2>&1; then
+  die "$HOST_USER can write the runtime config"
+fi
+if run_host_probe test -w "$SIGNER_PRIVATE_KEY_PATH" >/dev/null 2>&1; then
+  die "$HOST_USER can write the runtime signing key"
+fi
+if ! run_host_probe sh -c 'touch "$1"/host-write-probe && rm -f "$1"/host-write-probe' sh "$EVIDENCE_DIR" >/dev/null 2>&1; then
+  die "$HOST_USER cannot write to the evidence directory"
+fi
+if command -v getpcaps >/dev/null 2>&1; then
+  if ! run_host_probe sh -c 'getpcaps $$' >"$ACTION_WORK_ROOT/export/host-capabilities.txt" 2>&1; then
+    die "host capability probe failed"
+  fi
+  if grep -Eq 'cap_[a-z0-9_]+' "$ACTION_WORK_ROOT/export/host-capabilities.txt"; then
+    sed -n '1,20p' "$ACTION_WORK_ROOT/export/host-capabilities.txt" >&2 || true
+    die "$HOST_USER retained Linux capabilities after setpriv"
+  fi
+fi
 
 setup_network_boundary() {
   sudo ip netns del "$NETNS" >/dev/null 2>&1 || true
@@ -366,7 +455,15 @@ setup_network_boundary() {
 
 setup_network_boundary
 
-sudo "$RUNTIME_BIN" run --config "$RUNTIME_CONFIG" >"$PIPELOCK_LOG" 2>&1 &
+sudo HOME="$HOST_HOME" USER="$HOST_USER" LOGNAME="$HOST_USER" setpriv \
+  --reuid "$HOST_UID" \
+  --regid "$HOST_GID" \
+  --clear-groups \
+  --no-new-privs \
+  --bounding-set=-all \
+  --inh-caps=-all \
+  --ambient-caps=-all \
+  -- "$RUNTIME_BIN" run --config "$RUNTIME_CONFIG" >"$PIPELOCK_LOG" 2>&1 &
 PIPELOCK_PID="$!"
 
 for _ in $(seq 1 80); do
@@ -545,6 +642,8 @@ POSTURE_GENERATED_AT="$POSTURE_GENERATED_AT" \
 POSTURE_NETNS="$NETNS" \
 POSTURE_AGENT_USER="$AGENT_USER" \
 POSTURE_AGENT_UID="$AGENT_UID" \
+POSTURE_HOST_USER="$HOST_USER" \
+POSTURE_HOST_UID="$HOST_UID" \
 POSTURE_HOST_IP="$HOST_IP" \
 POSTURE_AGENT_IP="$AGENT_IP" \
 POSTURE_PROXY_URL="$PROXY_URL" \
@@ -569,6 +668,8 @@ posture = {
     "network_namespace": os.environ["POSTURE_NETNS"],
     "agent_user": os.environ["POSTURE_AGENT_USER"],
     "agent_uid": int(os.environ["POSTURE_AGENT_UID"]),
+    "host_user": os.environ["POSTURE_HOST_USER"],
+    "host_uid": int(os.environ["POSTURE_HOST_UID"]),
     "host_ip": os.environ["POSTURE_HOST_IP"],
     "agent_ip": os.environ["POSTURE_AGENT_IP"],
     "proxy_url": os.environ["POSTURE_PROXY_URL"],

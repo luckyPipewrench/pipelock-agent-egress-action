@@ -27,6 +27,7 @@ The action enforces egress for **the script executed inside the Pipelock action 
 - Frame-level WebSocket scanning when the script explicitly uses Pipelock's `/ws?url=...` proxy path
 - Direct network, DNS, and raw TCP from the action script blocked inside the namespace
 - Non-root execution as `pipelock-agent` with sudo denied and capabilities dropped
+- Non-root Pipelock listener execution as `pipelock-host` with sudo denied and capabilities dropped
 - Signed receipt verification and local Audit Packet generation
 
 **Fail-closed in v0 unless explicitly enabled by a later container enforcement mode:**
@@ -68,7 +69,7 @@ Trusted receipt verification requires both `signer-private-key-path` and `signer
 
 The action preserves caller policy from `config`, then materializes an action-owned runtime config that forces the listener, proxy, default identity, and receipt-signing fields required for this boundary.
 
-Self-hosted runner note: the action creates or reuses a local `pipelock-agent` account and writes a short-lived sudoers deny file during the run. Hosted runners are discarded after the job; self-hosted operators should reserve that account for this action.
+Self-hosted runner note: the action creates or reuses local `pipelock-agent` and `pipelock-host` accounts and writes a short-lived sudoers deny file during the run. Hosted runners are discarded after the job; self-hosted operators should reserve those accounts for this action.
 
 Supported Linux runners must provide passwordless sudo plus `ip`, `iptables`, `ip6tables`, `setpriv`, `unshare`, `curl`, `python3`, `ruby`, `realpath`, `getent`, `visudo`, `install`, `mount`, and `umount`.
 
