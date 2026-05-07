@@ -1,0 +1,102 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout action
+        uses: actions/checkout@v4
+
+      - name: Checkout Pipelock
+        uses: actions/checkout@v4
+        with:
+          repository: luckyPipewrench/pipelock
+          ref: v2.3.0
+          path: pipelock-src
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: pipelock-src/go.mod
+          cache-dependency-path: pipelock-src/go.sum
+
+      - name: Build Pipelock
+        run: go build -o "$RUNNER_TEMP/pipelock" ./cmd/pipelock
+        working-directory: pipelock-src
+
+      - name: Generate receipt signer
+        run: |
+          set -euo pipefail
+          "$RUNNER_TEMP/pipelock" keygen ci --keystore "$RUNNER_TEMP/pipelock-keys" --force
+
+      - name: Write smoke scripts
+        run: |
+          set -euo pipefail
+          mkdir -p ci
+          cat >ci/egress-smoke.sh <<'SH'
+          #!/usr/bin/env bash
+          set -euo pipefail
+
+          if env -u HTTP_PROXY -u HTTPS_PROXY -u http_proxy -u https_proxy \
+            curl --noproxy '*' -fsS --max-time 5 http://example.com >/dev/null 2>&1; then
+            echo "direct HTTP egress unexpectedly succeeded" >&2
+            exit 2
+          fi
+
+          curl -fsS --max-time 20 http://example.com >/dev/null
+          SH
+          chmod +x ci/egress-smoke.sh
+
+          cat >ci/noop.sh <<'SH'
+          #!/usr/bin/env bash
+          set -euo pipefail
+          true
+          SH
+          chmod +x ci/noop.sh
+
+      - name: Run proxied smoke
+        id: smoke
+        uses: ./
+        with:
+          script-path: ci/egress-smoke.sh
+          pipelock-bin: ${{ runner.temp }}/pipelock
+          signer-private-key-path: ${{ runner.temp }}/pipelock-keys/agents/ci/id_ed25519
+          signer-public-key: ${{ runner.temp }}/pipelock-keys/agents/ci/id_ed25519.pub
+          audit-packet-dir: smoke-audit-packet
+
+      - name: Assert smoke verdict
+        run: |
+          set -euo pipefail
+          test "${{ steps.smoke.outputs['verifier-verdict'] }}" = "valid"
+          test "${{ steps.smoke.outputs['receipt-count'] }}" -gt 0
+          test -s smoke-audit-packet/packet.json
+          test -s smoke-audit-packet/summary.md
+
+      - name: Run empty-chain check
+        id: empty
+        uses: ./
+        with:
+          script-path: ci/noop.sh
+          pipelock-bin: ${{ runner.temp }}/pipelock
+          signer-private-key-path: ${{ runner.temp }}/pipelock-keys/agents/ci/id_ed25519
+          signer-public-key: ${{ runner.temp }}/pipelock-keys/agents/ci/id_ed25519.pub
+          audit-packet-dir: empty-audit-packet
+          fail-on-verifier-error: "false"
+
+      - name: Assert empty-chain verdict
+        run: |
+          set -euo pipefail
+          test "${{ steps.empty.outputs['verifier-verdict'] }}" = "error"
+          test "${{ steps.empty.outputs['receipt-count'] }}" = "0"
+          test -s empty-audit-packet/packet.json
+          test -s empty-audit-packet/summary.md
