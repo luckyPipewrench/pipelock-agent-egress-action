@@ -1,0 +1,100 @@
+name: Pipelock Agent Egress Control
+description: Run a script through Pipelock, verify receipts, and write an Audit Packet.
+
+# Caller workflow should set:
+# permissions:
+#   contents: read
+
+inputs:
+  script-path:
+    description: Bash script path to run inside the Pipelock action boundary. Must resolve under working-directory.
+    required: true
+  script-args:
+    description: Optional newline-delimited script arguments. Each line is passed as one argv element.
+    required: false
+    default: ""
+  config:
+    description: Pipelock config path. Current pre-release records this path but materializes an enforced action runtime config.
+    required: false
+    default: .pipelock/ci.yaml
+  agent-identity:
+    description: Agent identity stamped into receipts and Audit Packet metadata.
+    required: false
+    default: github-actions-agent
+  pipelock-version:
+    description: Reserved for future pinned installs. This action does not download latest releases; use pipelock-bin or put pipelock on PATH.
+    required: false
+    default: ""
+  pipelock-bin:
+    description: Existing pipelock binary path. If empty, pipelock must already be on PATH.
+    required: false
+    default: ""
+  signer-private-key-path:
+    description: Existing Pipelock Ed25519 private signing key path. When empty, an ephemeral key is generated outside the agent boundary.
+    required: false
+    default: ""
+  signer-public-key:
+    description: Expected signer public key, as raw hex, Pipelock public key text, or a file path. Requires signer-private-key-path.
+    required: false
+    default: ""
+  audit-packet-dir:
+    description: Directory where the JSON and Markdown Audit Packet will be written.
+    required: false
+    default: pipelock-audit-packet
+  working-directory:
+    description: Directory where the agent script runs.
+    required: false
+    default: .
+  fail-on-verifier-error:
+    description: Fail the action when receipt verification fails.
+    required: false
+    default: "true"
+  debug:
+    description: Echo sensitive command details to logs. Default false keeps logs redacted.
+    required: false
+    default: "false"
+
+outputs:
+  audit-packet-path:
+    description: Path to the generated Audit Packet directory.
+    value: ${{ steps.run.outputs.audit_packet_path }}
+  receipt-count:
+    description: Number of receipts found in the verified chain.
+    value: ${{ steps.run.outputs.receipt_count }}
+  verifier-verdict:
+    description: Receipt verifier verdict.
+    value: ${{ steps.run.outputs.verifier_verdict }}
+
+runs:
+  using: composite
+  steps:
+    - id: run
+      shell: bash
+      env:
+        INPUT_SCRIPT_PATH: ${{ inputs.script-path }}
+        INPUT_SCRIPT_ARGS: ${{ inputs.script-args }}
+        INPUT_CONFIG: ${{ inputs.config }}
+        INPUT_AGENT_IDENTITY: ${{ inputs.agent-identity }}
+        INPUT_PIPELOCK_VERSION: ${{ inputs.pipelock-version }}
+        INPUT_PIPELOCK_BIN: ${{ inputs.pipelock-bin }}
+        INPUT_SIGNER_PRIVATE_KEY_PATH: ${{ inputs.signer-private-key-path }}
+        INPUT_SIGNER_PUBLIC_KEY: ${{ inputs.signer-public-key }}
+        INPUT_AUDIT_PACKET_DIR: ${{ inputs.audit-packet-dir }}
+        INPUT_WORKING_DIRECTORY: ${{ inputs.working-directory }}
+        INPUT_FAIL_ON_VERIFIER_ERROR: ${{ inputs.fail-on-verifier-error }}
+        INPUT_DEBUG: ${{ inputs.debug }}
+      run: |
+        set -euo pipefail
+        "$GITHUB_ACTION_PATH/src/run.sh" \
+          --script-path "$INPUT_SCRIPT_PATH" \
+          --script-args "$INPUT_SCRIPT_ARGS" \
+          --config "$INPUT_CONFIG" \
+          --agent-identity "$INPUT_AGENT_IDENTITY" \
+          --pipelock-version "$INPUT_PIPELOCK_VERSION" \
+          --pipelock-bin "$INPUT_PIPELOCK_BIN" \
+          --signer-private-key-path "$INPUT_SIGNER_PRIVATE_KEY_PATH" \
+          --signer-public-key "$INPUT_SIGNER_PUBLIC_KEY" \
+          --audit-packet-dir "$INPUT_AUDIT_PACKET_DIR" \
+          --working-directory "$INPUT_WORKING_DIRECTORY" \
+          --fail-on-verifier-error "$INPUT_FAIL_ON_VERIFIER_ERROR" \
+          --debug "$INPUT_DEBUG"
