@@ -66,9 +66,11 @@ This pre-release action does not download `latest` Pipelock binaries. Install a 
 
 Trusted receipt verification requires both `signer-private-key-path` and `signer-public-key`. Omit both inputs to use an ephemeral signer; the verifier verdict will be `self_consistent_only`, not trusted provenance.
 
-Current implementation note: the action records the `config` path in the Audit Packet posture, but it materializes an action-owned runtime config to force the listener, proxy, and receipt-signing settings required for this boundary. Safe caller-policy config merging is the next implementation step.
+The action preserves caller policy from `config`, then materializes an action-owned runtime config that forces the listener, proxy, default identity, and receipt-signing fields required for this boundary.
 
 Self-hosted runner note: the action creates or reuses a local `pipelock-agent` account and writes a short-lived sudoers deny file during the run. Hosted runners are discarded after the job; self-hosted operators should reserve that account for this action.
+
+Supported Linux runners must provide passwordless sudo plus `ip`, `iptables`, `ip6tables`, `setpriv`, `unshare`, `curl`, `python3`, `ruby`, `realpath`, `getent`, `visudo`, `install`, `mount`, and `umount`.
 
 Outputs:
 

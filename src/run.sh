@@ -35,6 +35,7 @@ SCRIPT_STAGING_DIR=""
 SCRIPT_RUN_PATH=""
 RUNTIME_BIN=""
 RUNTIME_CONFIG=""
+MATERIALIZED_CONFIG=""
 RUNTIME_KEYSTORE=""
 EVIDENCE_DIR=""
 POSTURE_PATH=""
@@ -93,14 +94,6 @@ bool_input() {
     true|false) ;;
     *) die "$name must be true or false, got $value" ;;
   esac
-}
-
-yaml_quote() {
-  python3 - "$1" <<'PY'
-import sys
-
-print("'" + sys.argv[1].replace("'", "''") + "'")
-PY
 }
 
 json_string_array() {
@@ -177,6 +170,7 @@ require_cmd setpriv
 require_cmd unshare
 require_cmd curl
 require_cmd python3
+require_cmd ruby
 require_cmd realpath
 require_cmd getent
 require_cmd visudo
@@ -192,6 +186,24 @@ if [[ -n "$SIGNER_PUBLIC_KEY" && -z "$SIGNER_PRIVATE_KEY_PATH" ]]; then
 fi
 
 WORKDIR_REAL="$(realpath -e "$WORKING_DIRECTORY")"
+CONFIG_REAL=""
+if [[ -n "$CONFIG" ]]; then
+  if [[ "$CONFIG" = /* ]]; then
+    CONFIG_CANDIDATE="$CONFIG"
+  else
+    CONFIG_CANDIDATE="$WORKDIR_REAL/$CONFIG"
+  fi
+  CONFIG_CANONICAL="$(realpath -m "$CONFIG_CANDIDATE")"
+  case "$CONFIG_CANONICAL" in
+    "$WORKDIR_REAL"|"$WORKDIR_REAL"/*) ;;
+    *) die "config path escapes working-directory: $CONFIG" ;;
+  esac
+  if [[ -e "$CONFIG_CANONICAL" ]]; then
+    CONFIG_REAL="$(realpath -e "$CONFIG_CANONICAL")"
+    [[ -f "$CONFIG_REAL" ]] || die "config path is not a file: $CONFIG_REAL"
+  fi
+fi
+
 if [[ "$SCRIPT_PATH" = /* ]]; then
   SCRIPT_REAL="$(realpath -e "$SCRIPT_PATH")"
 else
@@ -241,6 +253,7 @@ ACTION_WORK_ROOT="${RUNNER_TEMP:-/tmp}/pipelock-agent-egress-work-${GITHUB_RUN_I
 SCRIPT_STAGING_DIR="/tmp/pipelock-agent-egress-script-${GITHUB_RUN_ID:-local}-$$"
 RUNTIME_BIN="$RUNTIME_ROOT/bin/pipelock"
 RUNTIME_CONFIG="$RUNTIME_ROOT/config/action.yaml"
+MATERIALIZED_CONFIG="$ACTION_WORK_ROOT/action.yaml"
 RUNTIME_KEYSTORE="$RUNTIME_ROOT/keys"
 EVIDENCE_DIR="$RUNTIME_ROOT/evidence"
 POSTURE_PATH="$ACTION_WORK_ROOT/posture.json"
@@ -315,27 +328,14 @@ fi
 
 write_runtime_config() {
   local listen_addr="$HOST_IP:$PIPELOCK_PORT"
-  {
-    printf 'version: 1\n'
-    printf 'mode: balanced\n'
-    printf 'default_agent_identity: %s\n' "$(yaml_quote "$AGENT_IDENTITY")"
-    printf 'bind_default_agent_identity: true\n'
-    printf 'fetch_proxy:\n'
-    printf '  listen: %s\n' "$(yaml_quote "$listen_addr")"
-    printf '  timeout_seconds: 30\n'
-    printf '  max_response_mb: 10\n'
-    printf 'forward_proxy:\n'
-    printf '  enabled: true\n'
-    printf 'websocket_proxy:\n'
-    printf '  enabled: true\n'
-    printf 'flight_recorder:\n'
-    printf '  enabled: true\n'
-    printf '  dir: %s\n' "$(yaml_quote "$EVIDENCE_DIR")"
-    printf '  redact: true\n'
-    printf '  sign_checkpoints: true\n'
-    printf '  signing_key_path: %s\n' "$(yaml_quote "$SIGNER_PRIVATE_KEY_PATH")"
-  } | sudo tee "$RUNTIME_CONFIG" >/dev/null
-  sudo chmod 0600 "$RUNTIME_CONFIG"
+  "$ACTION_DIR/src/materialize-config.rb" \
+    --input "$CONFIG_REAL" \
+    --output "$MATERIALIZED_CONFIG" \
+    --agent-identity "$AGENT_IDENTITY" \
+    --listen "$listen_addr" \
+    --evidence-dir "$EVIDENCE_DIR" \
+    --signing-key-path "$SIGNER_PRIVATE_KEY_PATH"
+  sudo install -m 0600 -o root -g root "$MATERIALIZED_CONFIG" "$RUNTIME_CONFIG"
 }
 
 write_runtime_config

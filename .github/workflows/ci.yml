@@ -39,6 +39,56 @@ jobs:
           set -euo pipefail
           "$RUNNER_TEMP/pipelock" keygen ci --keystore "$RUNNER_TEMP/pipelock-keys" --force
 
+      - name: Write Pipelock config
+        run: |
+          set -euo pipefail
+          mkdir -p .pipelock
+          cat >.pipelock/ci.yaml <<'YAML'
+          version: 1
+          mode: balanced
+          logging:
+            include_allowed: true
+          fetch_proxy:
+            listen: "127.0.0.1:1"
+            timeout_seconds: 17
+            max_response_mb: 23
+          forward_proxy:
+            enabled: false
+          websocket_proxy:
+            enabled: false
+          flight_recorder:
+            enabled: false
+            dir: /tmp/not-action-evidence
+            signing_key_path: /tmp/not-action-key
+          YAML
+
+      - name: Test config materializer
+        run: |
+          set -euo pipefail
+          src/materialize-config.rb \
+            --input .pipelock/ci.yaml \
+            --output "$RUNNER_TEMP/materialized.yaml" \
+            --agent-identity ci-agent \
+            --listen 10.99.88.1:8888 \
+            --evidence-dir /tmp/action-evidence \
+            --signing-key-path /tmp/action-key
+          ruby - "$RUNNER_TEMP/materialized.yaml" <<'RUBY'
+          require "yaml"
+
+          cfg = YAML.load_file(ARGV.fetch(0))
+          abort "caller policy not preserved" unless cfg.dig("logging", "include_allowed") == true
+          abort "identity not forced" unless cfg["default_agent_identity"] == "ci-agent"
+          abort "identity binding not forced" unless cfg["bind_default_agent_identity"] == true
+          abort "listen not forced" unless cfg.dig("fetch_proxy", "listen") == "10.99.88.1:8888"
+          abort "fetch timeout not preserved" unless cfg.dig("fetch_proxy", "timeout_seconds") == 17
+          abort "fetch max response not preserved" unless cfg.dig("fetch_proxy", "max_response_mb") == 23
+          abort "forward proxy not forced" unless cfg.dig("forward_proxy", "enabled") == true
+          abort "websocket proxy not forced" unless cfg.dig("websocket_proxy", "enabled") == true
+          abort "recorder not forced" unless cfg.dig("flight_recorder", "enabled") == true
+          abort "recorder dir not forced" unless cfg.dig("flight_recorder", "dir") == "/tmp/action-evidence"
+          abort "signing key not forced" unless cfg.dig("flight_recorder", "signing_key_path") == "/tmp/action-key"
+          RUBY
+
       - name: Write smoke scripts
         run: |
           set -euo pipefail

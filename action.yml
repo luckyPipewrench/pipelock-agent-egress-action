@@ -14,7 +14,7 @@ inputs:
     required: false
     default: ""
   config:
-    description: Pipelock config path. Current pre-release records this path but materializes an enforced action runtime config.
+    description: Pipelock config path. Caller policy is preserved while action-owned identity, listener, proxy, and receipt settings are forced.
     required: false
     default: .pipelock/ci.yaml
   agent-identity:
