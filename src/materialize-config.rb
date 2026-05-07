@@ -43,9 +43,9 @@ config = {}
 input = options[:input].to_s
 if !input.empty? && File.exist?(input)
   raw = File.read(input)
-  docs = YAML.safe_load_stream(raw, permitted_classes: [], aliases: true).compact
+  docs = YAML.parse_stream(raw).children
   abort("config must contain exactly one YAML document") if docs.length > 1
-  config = docs.first || {}
+  config = YAML.safe_load(raw, permitted_classes: [], aliases: true) || {}
   abort("config root must be a mapping") unless config.is_a?(Hash)
   config = stringify_keys(config)
 end
