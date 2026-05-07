@@ -131,6 +131,7 @@ jobs:
           test "${{ steps.smoke.outputs['receipt-count'] }}" -gt 0
           test -s smoke-audit-packet/packet.json
           test -s smoke-audit-packet/summary.md
+          ruby -rjson -e 'packet = JSON.parse(File.read("smoke-audit-packet/packet.json")); posture = packet.fetch("posture"); abort "host user not recorded" unless posture["host_user"] == "pipelock-host"; abort "host uid is root" unless posture["host_uid"].to_i > 0'
 
       - name: Run empty-chain check
         id: empty
