@@ -97,10 +97,54 @@ jobs:
           #!/usr/bin/env bash
           set -euo pipefail
 
+          fail() {
+            echo "$1" >&2
+            exit 2
+          }
+
           if env -u HTTP_PROXY -u HTTPS_PROXY -u http_proxy -u https_proxy \
             curl --noproxy '*' -fsS --max-time 5 http://example.com >/dev/null 2>&1; then
-            echo "direct HTTP egress unexpectedly succeeded" >&2
-            exit 2
+            fail "direct HTTP egress unexpectedly succeeded"
+          fi
+
+          if timeout 5 getent hosts example.com >/dev/null 2>&1; then
+            fail "direct DNS lookup unexpectedly succeeded"
+          fi
+
+          if timeout 5 bash -c '</dev/tcp/1.1.1.1/80' >/dev/null 2>&1; then
+            fail "raw TCP egress unexpectedly succeeded"
+          fi
+
+          if sudo -n true >/dev/null 2>&1; then
+            fail "sudo unexpectedly succeeded"
+          fi
+
+          if sudo -n nsenter -t 1 -n true >/dev/null 2>&1; then
+            fail "sudo nsenter unexpectedly succeeded"
+          fi
+
+          if sudo -n iptables -F >/dev/null 2>&1; then
+            fail "sudo iptables unexpectedly succeeded"
+          fi
+
+          if sudo -n killall pipelock >/dev/null 2>&1; then
+            fail "sudo killall unexpectedly succeeded"
+          fi
+
+          if sudo -n umount /var/run/docker.sock >/dev/null 2>&1; then
+            fail "sudo umount unexpectedly succeeded"
+          fi
+
+          if [[ -S /var/run/docker.sock ]]; then
+            fail "Docker socket is visible inside the boundary"
+          fi
+
+          if command -v getpcaps >/dev/null 2>&1; then
+            caps="$(getpcaps $$ 2>/dev/null || true)"
+            if grep -Eq 'cap_[a-z0-9_]+' <<<"$caps"; then
+              echo "$caps" >&2
+              fail "capability set is not empty"
+            fi
           fi
 
           curl -fsS --max-time 20 http://example.com >/dev/null
@@ -132,6 +176,23 @@ jobs:
           test -s smoke-audit-packet/packet.json
           test -s smoke-audit-packet/summary.md
           ruby -rjson -e 'packet = JSON.parse(File.read("smoke-audit-packet/packet.json")); posture = packet.fetch("posture"); abort "host user not recorded" unless posture["host_user"] == "pipelock-host"; abort "host uid is root" unless posture["host_uid"].to_i > 0'
+
+      - name: Reject script path traversal
+        id: traversal
+        uses: ./
+        continue-on-error: true
+        with:
+          script-path: ../../../../etc/passwd
+          pipelock-bin: ${{ runner.temp }}/pipelock
+          signer-private-key-path: ${{ runner.temp }}/pipelock-keys/agents/ci/id_ed25519
+          signer-public-key: ${{ runner.temp }}/pipelock-keys/agents/ci/id_ed25519.pub
+          audit-packet-dir: traversal-audit-packet
+          fail-on-verifier-error: "false"
+
+      - name: Assert traversal rejected
+        run: |
+          set -euo pipefail
+          test "${{ steps.traversal.outcome }}" = "failure"
 
       - name: Run empty-chain check
         id: empty
