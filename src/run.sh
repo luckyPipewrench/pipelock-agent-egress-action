@@ -238,7 +238,7 @@ HOST_PIPELOCK_BIN="$(resolve_pipelock_bin)"
 
 RUNTIME_ROOT="${RUNNER_TEMP:-/tmp}/pipelock-agent-egress-${GITHUB_RUN_ID:-local}-$$"
 ACTION_WORK_ROOT="${RUNNER_TEMP:-/tmp}/pipelock-agent-egress-work-${GITHUB_RUN_ID:-local}-$$"
-SCRIPT_STAGING_DIR="${RUNNER_TEMP:-/tmp}/pipelock-agent-egress-script-${GITHUB_RUN_ID:-local}-$$"
+SCRIPT_STAGING_DIR="/tmp/pipelock-agent-egress-script-${GITHUB_RUN_ID:-local}-$$"
 RUNTIME_BIN="$RUNTIME_ROOT/bin/pipelock"
 RUNTIME_CONFIG="$RUNTIME_ROOT/config/action.yaml"
 RUNTIME_KEYSTORE="$RUNTIME_ROOT/keys"
