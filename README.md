@@ -60,7 +60,7 @@ If a path is not under the Pipelock control point, this action says so. No magic
     audit-packet-dir: "pipelock-audit-packet"
 ```
 
-Optional `script-args` is newline-delimited. Each line is passed as one argv element; it is not evaluated as shell.
+Optional `script-args` is newline-delimited. Each line is passed as one argv element to the Bash script; it is not evaluated as shell by the action wrapper.
 
 This pre-release action does not download `latest` Pipelock binaries. Install a pinned Pipelock binary in an earlier workflow step and pass `pipelock-bin`, or make `pipelock` available on `PATH`.
 

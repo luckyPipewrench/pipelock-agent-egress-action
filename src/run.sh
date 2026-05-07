@@ -197,7 +197,7 @@ case "$SCRIPT_REAL" in
   *) die "script-path escapes working-directory: $SCRIPT_PATH" ;;
 esac
 [[ -f "$SCRIPT_REAL" ]] || die "script-path is not a file: $SCRIPT_REAL"
-[[ -x "$SCRIPT_REAL" ]] || die "script-path is not executable: $SCRIPT_REAL"
+[[ -r "$SCRIPT_REAL" ]] || die "script-path is not readable: $SCRIPT_REAL"
 
 SCRIPT_ARGV=()
 if [[ -n "$SCRIPT_ARGS_RAW" ]]; then
@@ -462,7 +462,7 @@ setpriv \
   --bounding-set=-all \
   --inh-caps=-all \
   --ambient-caps=-all \
-  -- "$@"
+  -- bash "$@"
 ' bash "$WORKDIR_REAL" "$AGENT_UID" "$AGENT_GID" "$AGENT_HOME" "$PROXY_URL" "$CA_BUNDLE" "$SCRIPT_REAL" "${SCRIPT_ARGV[@]}"
 AGENT_EXIT_CODE=$?
 set -e

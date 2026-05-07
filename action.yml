@@ -7,7 +7,7 @@ description: Run a script through Pipelock, verify receipts, and write an Audit 
 
 inputs:
   script-path:
-    description: Script path to run inside the Pipelock action boundary. Must resolve under working-directory.
+    description: Bash script path to run inside the Pipelock action boundary. Must resolve under working-directory.
     required: true
   script-args:
     description: Optional newline-delimited script arguments. Each line is passed as one argv element.
