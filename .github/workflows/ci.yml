@@ -28,11 +28,14 @@ jobs:
         # Pinned to the merge commit of pipelock#498 (Audit Packet v0 schema
         # publication). Bump to a release tag once a tagged pipelock cuts the
         # SDK package; v2.4.0 predates the SDK, hence the separate checkout.
+        # fetch-depth: 0 because GitHub's default --depth=1 cannot resolve a
+        # raw SHA that is not a branch/tag tip.
         uses: actions/checkout@v4
         with:
           repository: luckyPipewrench/pipelock
           ref: 36f9585364afaef3b0bbc7a1d2cf4cd4d59e9bff
           path: pipelock-sdk-src
+          fetch-depth: 0
 
       - name: Set up Go
         uses: actions/setup-go@v5
