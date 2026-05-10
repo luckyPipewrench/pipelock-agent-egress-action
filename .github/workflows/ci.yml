@@ -33,7 +33,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           repository: luckyPipewrench/pipelock
-          ref: 36f9585364afaef3b0bbc7a1d2cf4cd4d59e9bff
+          ref: 36f95853453755cdb86fc4df1aa952a34c34bd1d
           path: pipelock-sdk-src
           fetch-depth: 0
 
