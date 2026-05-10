@@ -24,6 +24,16 @@ jobs:
           ref: v2.4.0
           path: pipelock-src
 
+      - name: Checkout Pipelock SDK
+        # Pinned to the merge commit of pipelock#498 (Audit Packet v0 schema
+        # publication). Bump to a release tag once a tagged pipelock cuts the
+        # SDK package; v2.4.0 predates the SDK, hence the separate checkout.
+        uses: actions/checkout@v4
+        with:
+          repository: luckyPipewrench/pipelock
+          ref: 36f9585364afaef3b0bbc7a1d2cf4cd4d59e9bff
+          path: pipelock-sdk-src
+
       - name: Set up Go
         uses: actions/setup-go@v5
         with:
@@ -33,6 +43,58 @@ jobs:
       - name: Build Pipelock
         run: go build -o "$RUNNER_TEMP/pipelock" ./cmd/pipelock
         working-directory: pipelock-src
+
+      - name: Build Audit Packet validator
+        # The SDK's Go binding enforces the v0 schema PLUS the
+        # totals-sum-equals-receipt-count and asymmetric trust invariants the
+        # JSON Schema cannot express. Round-tripping each emitted packet
+        # through this binding is the canonical conformance check.
+        working-directory: pipelock-sdk-src
+        run: |
+          set -euo pipefail
+          mkdir -p cmd/audit-packet-validator
+          cat >cmd/audit-packet-validator/main.go <<'GO'
+          package main
+
+          import (
+            "encoding/json"
+            "fmt"
+            "os"
+
+            auditpacket "github.com/luckyPipewrench/pipelock/sdk/audit-packet"
+          )
+
+          func main() {
+            if len(os.Args) < 2 {
+              fmt.Fprintln(os.Stderr, "usage: audit-packet-validator <packet.json> [packet.json...]")
+              os.Exit(64)
+            }
+            rc := 0
+            for _, path := range os.Args[1:] {
+              data, err := os.ReadFile(path)
+              if err != nil {
+                fmt.Fprintf(os.Stderr, "%s: read: %v\n", path, err)
+                rc = 1
+                continue
+              }
+              var p auditpacket.Packet
+              if err := json.Unmarshal(data, &p); err != nil {
+                fmt.Fprintf(os.Stderr, "%s: unmarshal: %v\n", path, err)
+                rc = 1
+                continue
+              }
+              if err := p.Validate(); err != nil {
+                fmt.Fprintf(os.Stderr, "%s: validate: %v\n", path, err)
+                rc = 1
+                continue
+              }
+              fmt.Printf("%s: ok (verdict=%s trusted=%t receipts=%d)\n",
+                path, p.Verifier.Verdict, p.Verifier.Trusted, p.Summary.ReceiptCount)
+            }
+            os.Exit(rc)
+          }
+          GO
+          go build -o "$RUNNER_TEMP/audit-packet-validator" ./cmd/audit-packet-validator
 
       - name: Generate receipt signer
         run: |
@@ -175,7 +237,57 @@ jobs:
           test "${{ steps.smoke.outputs['receipt-count'] }}" -gt 0
           test -s smoke-audit-packet/packet.json
           test -s smoke-audit-packet/summary.md
-          ruby -rjson -e 'packet = JSON.parse(File.read("smoke-audit-packet/packet.json")); posture = packet.fetch("posture"); abort "host user not recorded" unless posture["host_user"] == "pipelock-host"; abort "host uid is root" unless posture["host_uid"].to_i > 0'
+          ruby -rjson <<'RUBY'
+          require "time"
+
+          packet = JSON.parse(File.read("smoke-audit-packet/packet.json"))
+
+          abort "schema_version mismatch: #{packet['schema_version']}" unless packet["schema_version"] == "pipelock.audit_packet.v0"
+
+          %w[run policy summary verifier posture artifacts generated_at].each do |k|
+            abort "missing top-level #{k}" unless packet.key?(k)
+          end
+
+          # Top-level may not contain the legacy flat fields (would fail
+          # additionalProperties: false in v0.json).
+          %w[receipt_count totals policy_hashes transports].each do |k|
+            abort "legacy flat #{k} leaked into top-level" if packet.key?(k)
+          end
+
+          run_block = packet.fetch("run")
+          abort "provider should be github_actions on hosted runner: #{run_block['provider']}" unless run_block["provider"] == "github_actions"
+          abort "agent_identity not stamped" unless run_block["agent_identity"] == "github-actions-agent"
+          Time.iso8601(run_block.fetch("started_at"))
+          Time.iso8601(run_block.fetch("completed_at"))
+          abort "repository not recorded" if run_block["repository"].to_s.empty?
+          abort "sha not recorded" if run_block["sha"].to_s.empty?
+
+          policy_block = packet.fetch("policy")
+          abort "policy_hashes must be an array" unless policy_block["policy_hashes"].is_a?(Array)
+
+          summary = packet.fetch("summary")
+          abort "summary.receipt_count missing" unless summary["receipt_count"].is_a?(Integer)
+          totals = summary.fetch("totals")
+          %w[allow block warn ask strip forward redirect other].each do |bucket|
+            abort "totals missing #{bucket}" unless totals.key?(bucket)
+          end
+          totals_sum = totals.values.map(&:to_i).sum
+          abort "totals sum #{totals_sum} != receipt_count #{summary['receipt_count']}" unless totals_sum == summary["receipt_count"].to_i
+
+          verifier = packet.fetch("verifier")
+          abort "verdict should be valid: #{verifier['verdict']}" unless verifier["verdict"] == "valid"
+          abort "trusted should be true when verdict=valid" unless verifier["trusted"] == true
+          abort "signer_key required when trusted=true" if verifier["signer_key"].to_s.empty?
+
+          posture = packet.fetch("posture")
+          abort "host user not recorded" unless posture["host_user"] == "pipelock-host"
+          abort "host uid is root" unless posture["host_uid"].to_i > 0
+          %w[raw_socket_status docker_socket_status dns_udp_status browser_proxy_status websocket_frame_scanning].each do |k|
+            abort "posture #{k} missing" if posture[k].to_s.empty?
+          end
+          abort "unsupported_paths must be a non-empty array" unless posture["unsupported_paths"].is_a?(Array) && !posture["unsupported_paths"].empty?
+          RUBY
+          "$RUNNER_TEMP/audit-packet-validator" smoke-audit-packet/packet.json
 
       - name: Reject script path traversal
         id: traversal
@@ -212,3 +324,15 @@ jobs:
           test "${{ steps.empty.outputs['receipt-count'] }}" = "0"
           test -s empty-audit-packet/packet.json
           test -s empty-audit-packet/summary.md
+          ruby -rjson <<'RUBY'
+          packet = JSON.parse(File.read("empty-audit-packet/packet.json"))
+          verifier = packet.fetch("verifier")
+          abort "empty-chain verdict must be error: #{verifier['verdict']}" unless verifier["verdict"] == "error"
+          abort "empty-chain trusted must be false" if verifier["trusted"] != false
+          abort "empty-chain must omit signer_key" if verifier.key?("signer_key")
+          summary = packet.fetch("summary")
+          abort "empty-chain receipt_count must be 0" unless summary["receipt_count"].to_i == 0
+          totals = summary.fetch("totals")
+          abort "empty-chain totals must sum to 0" unless totals.values.map(&:to_i).sum == 0
+          RUBY
+          "$RUNNER_TEMP/audit-packet-validator" empty-audit-packet/packet.json

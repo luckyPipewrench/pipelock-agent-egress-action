@@ -49,6 +49,9 @@ PIPELOCK_PID=""
 AGENT_EXIT_CODE=0
 VERIFIER_VERDICT="error"
 RECEIPT_COUNT=0
+RUN_STARTED_AT=""
+RUN_COMPLETED_AT=""
+CONFIG_SNAPSHOT_SHA256=""
 CREATED_AGENT_USER="false"
 CREATED_HOST_USER="false"
 SUDOERS_DENY_FILE=""
@@ -98,15 +101,6 @@ bool_input() {
     true|false) ;;
     *) die "$name must be true or false, got $value" ;;
   esac
-}
-
-json_string_array() {
-  python3 - "$@" <<'PY'
-import json
-import sys
-
-print(json.dumps(sys.argv[1:]))
-PY
 }
 
 cleanup() {
@@ -406,6 +400,9 @@ write_runtime_config() {
 }
 
 write_runtime_config
+if command -v sha256sum >/dev/null 2>&1; then
+  CONFIG_SNAPSHOT_SHA256="$(sudo sha256sum "$RUNTIME_CONFIG" | awk '{print $1}')"
+fi
 
 if ! run_host_probe test -r "$RUNTIME_CONFIG" >/dev/null 2>&1; then
   die "$HOST_USER cannot read the runtime config"
@@ -515,6 +512,7 @@ if [[ -z "$CA_BUNDLE" && -f "$HOME/.pipelock/ca.pem" ]]; then
 fi
 
 note "launching script inside $NETNS as $AGENT_USER"
+RUN_STARTED_AT="$(date -u +"%Y-%m-%dT%H:%M:%SZ")"
 set +e
 sudo -E ip netns exec "$NETNS" unshare --mount --propagation private bash -c '
 set -euo pipefail
@@ -572,6 +570,7 @@ setpriv \
   -- bash "$@"
 ' bash "$WORKDIR_REAL" "$AGENT_UID" "$AGENT_GID" "$AGENT_HOME" "$PROXY_URL" "$CA_BUNDLE" "$SCRIPT_RUN_PATH" "${SCRIPT_ARGV[@]}"
 AGENT_EXIT_CODE=$?
+RUN_COMPLETED_AT="$(date -u +"%Y-%m-%dT%H:%M:%SZ")"
 set -e
 
 if [[ "$AGENT_EXIT_CODE" -ne 0 ]]; then
@@ -635,10 +634,10 @@ PY
 )"
 fi
 
-SCRIPT_ARGS_JSON="$(json_string_array "${SCRIPT_ARGV[@]}")"
-POSTURE_GENERATED_AT="$(date -u +"%Y-%m-%dT%H:%M:%SZ")"
-POSTURE_SCRIPT_ARGS_JSON="$SCRIPT_ARGS_JSON" \
-POSTURE_GENERATED_AT="$POSTURE_GENERATED_AT" \
+# posture.json carries ONLY schema-allowed posture fields (sdk/audit-packet/v0.json
+# § posture.additionalProperties: false). Run-context, policy, summary, and
+# verifier inputs are passed to audit-packet.sh as flags so the posture file is
+# a clean enforcement-only artifact.
 POSTURE_NETNS="$NETNS" \
 POSTURE_AGENT_USER="$AGENT_USER" \
 POSTURE_AGENT_UID="$AGENT_UID" \
@@ -648,23 +647,34 @@ POSTURE_HOST_IP="$HOST_IP" \
 POSTURE_AGENT_IP="$AGENT_IP" \
 POSTURE_PROXY_URL="$PROXY_URL" \
 POSTURE_SCRIPT_BASENAME="$SCRIPT_BASENAME" \
-POSTURE_SCRIPT_PATH="$SCRIPT_REAL" \
-POSTURE_AGENT_EXIT_CODE="$AGENT_EXIT_CODE" \
-POSTURE_VERIFIER_VERDICT="$VERIFIER_VERDICT" \
-POSTURE_TRUSTED_VERIFICATION="$TRUSTED_VERIFICATION" \
-POSTURE_RECEIPT_COUNT="$RECEIPT_COUNT" \
-POSTURE_USER_CONFIG_PATH="$CONFIG" \
-POSTURE_RUNTIME_CONFIG_PATH="$RUNTIME_CONFIG" \
+POSTURE_SCRIPT_ARG_COUNT="${#SCRIPT_ARGV[@]}" \
 python3 - "$POSTURE_PATH" <<'PY'
 import json
 import os
 import sys
 
+# Enforcement claims for `linux_netns_iptables_setpriv`:
+#   raw_socket_status: agent runs in a NETNS with `iptables -P OUTPUT DROP`
+#     and setpriv `--bounding-set=-all`, so CAP_NET_RAW is dropped and any raw
+#     socket egress would also hit the iptables drop.
+#   docker_socket_status: /var/run/docker.sock is bind-mounted to /dev/null
+#     inside the boundary mount namespace.
+#   dns_udp_status: NETNS iptables drops UDP egress (only TCP to HOST_IP:8888
+#     is allowed); ip6tables defaults to drop.
+#   browser_proxy_status: HTTPS_PROXY/HTTP_PROXY exported and NO_PROXY unset
+#     inside the boundary, and the netns has no other allowed TCP path.
+#   websocket_frame_scanning: frame-level scanning fires only on the explicit
+#     /ws?url= proxy path; arbitrary wss:// destinations are network-contained
+#     but not frame-scanned.
 posture = {
-    "generated_at": os.environ["POSTURE_GENERATED_AT"],
+    "enforcement_mode": "linux_netns_iptables_setpriv",
     "runner_os": os.environ.get("RUNNER_OS", "Linux"),
     "runner_arch": os.environ.get("RUNNER_ARCH", ""),
-    "enforcement_mode": "linux_netns_iptables_setpriv",
+    "raw_socket_status": "denied",
+    "docker_socket_status": "masked",
+    "dns_udp_status": "denied",
+    "browser_proxy_status": "forced",
+    "websocket_frame_scanning": "explicit_ws_proxy_path_required",
     "network_namespace": os.environ["POSTURE_NETNS"],
     "agent_user": os.environ["POSTURE_AGENT_USER"],
     "agent_uid": int(os.environ["POSTURE_AGENT_UID"]),
@@ -674,17 +684,20 @@ posture = {
     "agent_ip": os.environ["POSTURE_AGENT_IP"],
     "proxy_url": os.environ["POSTURE_PROXY_URL"],
     "script_basename": os.environ["POSTURE_SCRIPT_BASENAME"],
-    "script_path": os.environ["POSTURE_SCRIPT_PATH"],
-    "script_args": json.loads(os.environ["POSTURE_SCRIPT_ARGS_JSON"]),
-    "script_arg_count": len(json.loads(os.environ["POSTURE_SCRIPT_ARGS_JSON"])),
-    "agent_exit_code": int(os.environ["POSTURE_AGENT_EXIT_CODE"]),
-    "verifier_verdict": os.environ["POSTURE_VERIFIER_VERDICT"],
-    "trusted_verification": os.environ["POSTURE_TRUSTED_VERIFICATION"] == "true",
-    "receipt_count": int(os.environ["POSTURE_RECEIPT_COUNT"]),
-    "user_config_path": os.environ["POSTURE_USER_CONFIG_PATH"],
-    "runtime_config_path": os.environ["POSTURE_RUNTIME_CONFIG_PATH"],
-    "websocket_frame_scanning": "explicit_ws_proxy_path_required",
+    "script_arg_count": int(os.environ["POSTURE_SCRIPT_ARG_COUNT"]),
+    # Honest disclosure of paths the v0 boundary does not control. Lifted
+    # verbatim from README "Out of scope" + "Fail-closed in v0" sections.
+    "unsupported_paths": [
+        "mcp_transports",
+        "nested_docker",
+        "non_proxy_browser_egress",
+        "service_containers",
+        "sibling_steps",
+        "ssh_egress",
+    ],
 }
+if not posture["runner_arch"]:
+    posture.pop("runner_arch")
 with open(sys.argv[1], "w", encoding="utf-8") as fh:
     json.dump(posture, fh, indent=2, sort_keys=True)
     fh.write("\n")
@@ -694,7 +707,16 @@ PY
   --receipt-chain "$EVIDENCE_EXPORT" \
   --verifier-output "$VERIFIER_OUTPUT" \
   --posture "$POSTURE_PATH" \
-  --output-dir "$AUDIT_PACKET_DIR"
+  --output-dir "$AUDIT_PACKET_DIR" \
+  --run-started-at "$RUN_STARTED_AT" \
+  --run-completed-at "$RUN_COMPLETED_AT" \
+  --agent-identity "$AGENT_IDENTITY" \
+  --agent-exit-code "$AGENT_EXIT_CODE" \
+  --verifier-verdict "$VERIFIER_VERDICT" \
+  --user-config-path "$CONFIG" \
+  --runtime-config-path "$RUNTIME_CONFIG" \
+  --config-snapshot-sha256 "$CONFIG_SNAPSHOT_SHA256" \
+  --signer-public-key "$SIGNER_PUBLIC_KEY"
 
 if [[ -n "${GITHUB_OUTPUT:-}" ]]; then
   {
