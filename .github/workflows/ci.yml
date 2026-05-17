@@ -15,10 +15,10 @@ jobs:
     timeout-minutes: 20
     steps:
       - name: Checkout action
-        uses: actions/checkout@v6
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
 
       - name: Checkout Pipelock
-        uses: actions/checkout@v6
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
         with:
           repository: luckyPipewrench/pipelock
           ref: v2.4.0
@@ -30,7 +30,7 @@ jobs:
         # SDK package; v2.4.0 predates the SDK, hence the separate checkout.
         # fetch-depth: 0 because GitHub's default --depth=1 cannot resolve a
         # raw SHA that is not a branch/tag tip.
-        uses: actions/checkout@v6
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
         with:
           repository: luckyPipewrench/pipelock
           ref: 36f95853453755cdb86fc4df1aa952a34c34bd1d
@@ -38,7 +38,7 @@ jobs:
           fetch-depth: 0
 
       - name: Set up Go
-        uses: actions/setup-go@v6
+        uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c # v6
         with:
           go-version-file: pipelock-src/go.mod
           cache-dependency-path: pipelock-src/go.sum
