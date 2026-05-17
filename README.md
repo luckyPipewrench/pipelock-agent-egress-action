@@ -1,5 +1,12 @@
 # Pipelock Agent Egress Action
 
+[![CI](https://github.com/luckyPipewrench/pipelock-agent-egress-action/actions/workflows/ci.yml/badge.svg)](https://github.com/luckyPipewrench/pipelock-agent-egress-action/actions/workflows/ci.yml)
+[![CodeQL](https://github.com/luckyPipewrench/pipelock-agent-egress-action/actions/workflows/codeql.yml/badge.svg)](https://github.com/luckyPipewrench/pipelock-agent-egress-action/actions/workflows/codeql.yml)
+[![Lint](https://github.com/luckyPipewrench/pipelock-agent-egress-action/actions/workflows/lint.yml/badge.svg)](https://github.com/luckyPipewrench/pipelock-agent-egress-action/actions/workflows/lint.yml)
+[![OpenSSF Scorecard](https://api.scorecard.dev/projects/github.com/luckyPipewrench/pipelock-agent-egress-action/badge)](https://scorecard.dev/viewer/?uri=github.com/luckyPipewrench/pipelock-agent-egress-action)
+[![License: Apache 2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
+[![Latest Release](https://img.shields.io/github/v/release/luckyPipewrench/pipelock-agent-egress-action)](https://github.com/luckyPipewrench/pipelock-agent-egress-action/releases)
+
 Verifiable Egress Control is the missing CI primitive for AI agents. Run the agent script, control what leaves the runner, verify the receipts, produce an Audit Packet a third party can inspect. Pipelock is staking that category as an open-source agent firewall with mediator-signed action receipts from outside the agent trust boundary.
 
 ## What this action is for

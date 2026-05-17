@@ -1,0 +1,7 @@
+# Pipelock Agent Egress Control — code ownership
+#
+# Repository owner reviews every change. The action is a security-sensitive
+# CI primitive: any change to src/, action.yml, or workflows can affect the
+# evidence guarantees downstream relying parties depend on.
+
+* @luckyPipewrench
