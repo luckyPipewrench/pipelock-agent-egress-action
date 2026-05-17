@@ -1,6 +1,30 @@
 {
   "$schema": "https://docs.renovatebot.com/renovate-schema.json",
   "extends": [
-    "config:recommended"
+    "config:recommended",
+    ":semanticCommits"
+  ],
+  "minimumReleaseAge": "10 days",
+  "internalChecksFilter": "strict",
+  "labels": ["dependencies"],
+  "prConcurrentLimit": 10,
+  "vulnerabilityAlerts": {
+    "labels": ["security", "fast-track"],
+    "minimumReleaseAge": "0 days",
+    "schedule": ["at any time"]
+  },
+  "packageRules": [
+    {
+      "matchManagers": ["github-actions"],
+      "pinDigests": true,
+      "commitMessagePrefix": "ci:",
+      "addLabels": ["ci"],
+      "groupName": "ci-actions"
+    },
+    {
+      "matchUpdateTypes": ["major"],
+      "addLabels": ["major-update", "needs-review"],
+      "automerge": false
+    }
   ]
 }
