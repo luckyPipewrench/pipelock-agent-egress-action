@@ -19,7 +19,14 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Run ShellCheck on src/
-        uses: ludeeus/action-shellcheck@2.0.0
+        uses: ludeeus/action-shellcheck@00cae500b08a931fb5698e11e79bfbd38e612a38 # v2.0.0
+        env:
+          # SC2024: "sudo doesn't affect redirects" — the redirects in src/run.sh
+          # write keygen / verify-receipt / pipelock-run output to wrapping-user-owned
+          # temp files on purpose; sudo elevates only the command. Excluding the check
+          # globally is acceptable because every existing case is intentional, and
+          # this repo does not otherwise create root-owned files via sudo redirect.
+          SHELLCHECK_OPTS: --exclude=SC2024
         with:
           severity: warning
           scandir: ./src
@@ -33,7 +40,7 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Set up Ruby
-        uses: ruby/setup-ruby@v1
+        uses: ruby/setup-ruby@97ecb7b512899eb71ab1bf2310a624c6f1589ac6 # v1.x latest
         with:
           ruby-version: "3.3"
 
