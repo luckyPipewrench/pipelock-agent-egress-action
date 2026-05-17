@@ -47,10 +47,24 @@ The action enforces egress for **the script executed inside the Pipelock action 
 
 If a path is not under the Pipelock control point, this action says so. No magic. No fake containment story.
 
+## What this action does not prove
+
+The Audit Packet is evidence about traffic that crossed the Pipelock control point. It is not evidence about the runner that produced it. A relying party should pin the following before treating a `valid` verdict as provenance:
+
+- Signer key pinned from a source outside the run environment. A key fetched from the same runner Pipelock just ran on is not pinned in the sense this action uses. Hand the public key over before the run or fetch it from a known trust anchor.
+- Verifier run outside the run environment. The Go, Rust, TypeScript, and Python verifiers all run offline. Running the verifier inside the same runner that produced the packet reduces the verdict to "the runner's verifier reported a verdict."
+- Pipelock binary pinned by checksum. This action does not download `latest`. Install a pinned binary in an earlier workflow step. A compromised runner that swaps the binary can still produce receipts that verify if it can use the configured signing key, so checksum pinning and signer-key pinning have to travel together.
+- This action pinned by full-length commit SHA, not a tag. Tags are mutable. Short SHAs are prefix identifiers, not immutable release anchors. The "Pinning options" block below uses the full 40-character SHA for the same reason.
+- Workflow scoped so the wrapped agent script is the sole secret-bearing step in the job. Sibling steps and steps that run before this action are outside the boundary. Secrets passed to other steps via `env:` or surfaced via `outputs:` are not in the receipt chain.
+
+A missing receipt is not a proof of absence. The packet does not enumerate traffic Pipelock should have seen but didn't. Complement with runner-level network telemetry if the threat model needs negative-space evidence.
+
+The canonical text on what a verified packet proves and does not prove is in [pipelock/docs/security/audit-packet-threat-model.md](https://github.com/luckyPipewrench/pipelock/blob/main/docs/security/audit-packet-threat-model.md).
+
 ## Action interface
 
 ```yaml
-- uses: luckyPipewrench/pipelock-agent-egress-action@v0
+- uses: luckyPipewrench/pipelock-agent-egress-action@8f1894db09ec98d0bcbc46d0cc1cedffe5e5b504 # v0.1.0
   with:
     script-path: "./ci/agent-review.sh"
     pipelock-bin: "/usr/local/bin/pipelock"
@@ -60,6 +74,24 @@ If a path is not under the Pipelock control point, this action says so. No magic
     signer-public-key: "${{ secrets.PIPELOCK_RECEIPT_PUBLIC_KEY }}"
     audit-packet-dir: "pipelock-audit-packet"
 ```
+
+### Pinning options
+
+```yaml
+# Full-length commit SHA (recommended for security-sensitive workflows)
+uses: luckyPipewrench/pipelock-agent-egress-action@8f1894db09ec98d0bcbc46d0cc1cedffe5e5b504 # v0.1.0
+
+# Precise tag (cryptographically signed, but tags are mutable in git)
+uses: luckyPipewrench/pipelock-agent-egress-action@v0.1.0
+
+# Floating-minor (auto-pulls v0.1.x patches)
+uses: luckyPipewrench/pipelock-agent-egress-action@v0.1
+
+# Floating-major (auto-pulls v0.x features, breaks at v1.0.0)
+uses: luckyPipewrench/pipelock-agent-egress-action@v0
+```
+
+All four forms currently point to the same v0.1.0 commit. Full-length commit SHA is the only form git treats as immutable. Short SHAs are prefix identifiers and tags can be repointed; for an evidence-bearing action, use the full SHA and update by hand when a new release ships.
 
 Optional `script-args` is newline-delimited. Each line is passed as one argv element to the Bash script; it is not evaluated as shell by the action wrapper.
 
