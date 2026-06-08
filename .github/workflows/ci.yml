@@ -15,10 +15,10 @@ jobs:
     timeout-minutes: 20
     steps:
       - name: Checkout action
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
 
       - name: Checkout Pipelock
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
         with:
           repository: luckyPipewrench/pipelock
           ref: v2.4.0
@@ -30,7 +30,7 @@ jobs:
         # SDK package; v2.4.0 predates the SDK, hence the separate checkout.
         # fetch-depth: 0 because GitHub's default --depth=1 cannot resolve a
         # raw SHA that is not a branch/tag tip.
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
         with:
           repository: luckyPipewrench/pipelock
           ref: 36f95853453755cdb86fc4df1aa952a34c34bd1d
