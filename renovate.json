@@ -6,6 +6,7 @@
   ],
   "minimumReleaseAge": "10 days",
   "internalChecksFilter": "strict",
+  "dependencyDashboard": false,
   "labels": ["dependencies"],
   "prConcurrentLimit": 10,
   "vulnerabilityAlerts": {
