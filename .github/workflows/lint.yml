@@ -58,5 +58,5 @@ jobs:
       - name: Run actionlint
         run: |
           set -euo pipefail
-          bash <(curl https://raw.githubusercontent.com/rhysd/actionlint/main/scripts/download-actionlint.bash)
+          bash <(curl https://raw.githubusercontent.com/rhysd/actionlint/011a6d15e749bb3f2d771eed9c7aa0e7e3e10ee7/scripts/download-actionlint.bash)
           ./actionlint -color
