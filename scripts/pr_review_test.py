@@ -45,8 +45,8 @@ class RoutingTest(unittest.TestCase):
         self.assertEqual(default_payload["max_completion_tokens"], 8192)
         self.assertNotIn("temperature", default_payload)
         self.assertEqual(deep_payload["model"], "gpt-5.6-terra")
-        self.assertEqual(deep_payload["reasoning_effort"], "medium")
-        self.assertEqual(deep_payload["max_completion_tokens"], 25000)
+        self.assertEqual(deep_payload["reasoning_effort"], "xhigh")
+        self.assertEqual(deep_payload["max_completion_tokens"], 64000)
 
     def test_empty_overrides_fall_back_to_reviewed_defaults(self):
         with mock.patch.dict(pr_review.os.environ, {"PR_REVIEW_MODEL_FAST": "", "PR_REVIEW_MODEL_DEEP": ""}, clear=True):
