@@ -15,9 +15,11 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
-      # No security-events: write. This job no longer uploads SARIF, so it
-      # needs no permission to write code-scanning alerts. id-token remains
-      # because publish_results signs the result for the public Scorecard API.
+      # No security-events: write. This job no longer uploads SARIF to code
+      # scanning, so it needs no permission to write code-scanning alerts. It
+      # does still upload results.sarif as a build artifact below. id-token
+      # remains because publish_results signs the result for the public
+      # Scorecard API.
       id-token: write
       contents: read
       actions: read
