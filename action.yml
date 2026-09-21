@@ -1,6 +1,10 @@
 name: Pipelock Agent Egress Control
 description: Run a script through Pipelock, verify receipts, and write an Audit Packet.
 
+branding:
+  icon: 'shield'
+  color: 'green'
+
 # Caller workflow should set:
 # permissions:
 #   contents: read
