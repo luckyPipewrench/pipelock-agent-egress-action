@@ -310,18 +310,21 @@ jobs:
           fail-on-verifier-error: "false"
 
       - name: Assert empty-chain verdict
+        # A script that makes no requests still leaves Pipelock's session open
+        # and close receipts, so the chain verifies against the pinned key while
+        # the packet reports zero agent actions.
         run: |
           set -euo pipefail
-          test "${{ steps.empty.outputs['verifier-verdict'] }}" = "error"
+          test "${{ steps.empty.outputs['verifier-verdict'] }}" = "valid"
           test "${{ steps.empty.outputs['receipt-count'] }}" = "0"
           test -s empty-audit-packet/packet.json
           test -s empty-audit-packet/summary.md
           ruby -rjson <<'RUBY'
           packet = JSON.parse(File.read("empty-audit-packet/packet.json"))
           verifier = packet.fetch("verifier")
-          abort "empty-chain verdict must be error: #{verifier['verdict']}" unless verifier["verdict"] == "error"
-          abort "empty-chain trusted must be false" if verifier["trusted"] != false
-          abort "empty-chain must omit signer_key" if verifier.key?("signer_key")
+          abort "empty-chain verdict must be valid: #{verifier['verdict']}" unless verifier["verdict"] == "valid"
+          abort "empty-chain trusted must be true" if verifier["trusted"] != true
+          abort "empty-chain must name its signer_key" unless verifier.key?("signer_key")
           summary = packet.fetch("summary")
           abort "empty-chain receipt_count must be 0" unless summary["receipt_count"].to_i == 0
           totals = summary.fetch("totals")

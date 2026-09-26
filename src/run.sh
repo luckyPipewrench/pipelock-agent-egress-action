@@ -627,8 +627,13 @@ with open(sys.argv[1], "r", encoding="utf-8") as fh:
             entry = json.loads(line)
         except json.JSONDecodeError:
             continue
-        if entry.get("type") == "action_receipt":
-            count += 1
+        if entry.get("type") != "action_receipt":
+            continue
+        # Session open/close receipts are chain bookkeeping, not agent actions.
+        record = (entry.get("detail") or {}).get("action_record") or {}
+        if record.get("session_control"):
+            continue
+        count += 1
 print(count)
 PY
 )"
