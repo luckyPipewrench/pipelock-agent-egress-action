@@ -627,11 +627,27 @@ with open(sys.argv[1], "r", encoding="utf-8") as fh:
             entry = json.loads(line)
         except json.JSONDecodeError:
             continue
-        if entry.get("type") == "action_receipt":
-            count += 1
+        if not isinstance(entry, dict) or entry.get("type") != "action_receipt":
+            continue
+        # Session open/close receipts are chain bookkeeping, not agent actions.
+        # A receipt without an action record object is malformed, not an
+        # action. audit-packet.sh applies the same rule so the counts agree.
+        detail = entry.get("detail")
+        record = detail.get("action_record") if isinstance(detail, dict) else None
+        if not isinstance(record, dict) or record.get("session_control"):
+            continue
+        count += 1
 print(count)
 PY
 )"
+fi
+
+# A chain holding only Pipelock's session open and close receipts records no
+# agent action, so it is not evidence that anything was enforced. Keep the
+# no-evidence contract: zero agent action receipts is an error verdict.
+if [[ "$RECEIPT_COUNT" -eq 0 && "$VERIFIER_VERDICT" != "error" && "$VERIFIER_VERDICT" != "invalid" ]]; then
+  VERIFIER_VERDICT="error"
+  printf '\nno_agent_action_receipts; the chain holds only session receipts\n' >>"$VERIFIER_OUTPUT"
 fi
 
 # posture.json carries ONLY schema-allowed posture fields (sdk/audit-packet/v0.json

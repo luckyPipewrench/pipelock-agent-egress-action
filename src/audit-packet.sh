@@ -218,11 +218,21 @@ with evidence_path.open("r", encoding="utf-8") as fh:
             # Malformed lines do not count as receipts; counting them would
             # break the totals-sum-equals-receipt-count invariant.
             continue
-        if entry.get("type") != "action_receipt":
+        if not isinstance(entry, dict) or entry.get("type") != "action_receipt":
+            continue
+        # A receipt without an action record object is malformed, not an
+        # action. run.sh applies the same rule so the counts agree.
+        detail = entry.get("detail")
+        action_record = detail.get("action_record") if isinstance(detail, dict) else None
+        if not isinstance(action_record, dict):
+            continue
+        # Session open and close receipts are chain bookkeeping Pipelock writes
+        # even when the agent does nothing. The verifier still checks them as
+        # part of the chain, but they are not agent actions, so they do not
+        # count toward receipt_count or the verdict totals.
+        if action_record.get("session_control"):
             continue
         receipt_count += 1
-        detail = entry.get("detail") or {}
-        action_record = detail.get("action_record") or {}
         verdict_name = str(action_record.get("verdict") or "other")
         totals[verdict_name if verdict_name in totals else "other"] += 1
         policy_hash = action_record.get("policy_hash")
