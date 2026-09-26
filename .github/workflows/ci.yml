@@ -21,10 +21,13 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           repository: luckyPipewrench/pipelock
-          # The latest Pipelock release. It carries the Audit Packet SDK too,
-          # so the validator below builds from the same checkout.
-          ref: v3.5.0
+          # The v3.5.0 release commit, pinned by SHA because a tag can move.
+          # It carries the Audit Packet SDK too, so the validator below builds
+          # from the same checkout. fetch-depth: 0 lets checkout resolve a raw
+          # SHA that is not a branch tip.
+          ref: ca05ed06f360f5aac5518ab6ea2b11d729b70bee
           path: pipelock-src
+          fetch-depth: 0
 
       - name: Set up Go
         uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
@@ -310,21 +313,18 @@ jobs:
           fail-on-verifier-error: "false"
 
       - name: Assert empty-chain verdict
-        # A script that makes no requests still leaves Pipelock's session open
-        # and close receipts, so the chain verifies against the pinned key while
-        # the packet reports zero agent actions.
         run: |
           set -euo pipefail
-          test "${{ steps.empty.outputs['verifier-verdict'] }}" = "valid"
+          test "${{ steps.empty.outputs['verifier-verdict'] }}" = "error"
           test "${{ steps.empty.outputs['receipt-count'] }}" = "0"
           test -s empty-audit-packet/packet.json
           test -s empty-audit-packet/summary.md
           ruby -rjson <<'RUBY'
           packet = JSON.parse(File.read("empty-audit-packet/packet.json"))
           verifier = packet.fetch("verifier")
-          abort "empty-chain verdict must be valid: #{verifier['verdict']}" unless verifier["verdict"] == "valid"
-          abort "empty-chain trusted must be true" if verifier["trusted"] != true
-          abort "empty-chain must name its signer_key" unless verifier.key?("signer_key")
+          abort "empty-chain verdict must be error: #{verifier['verdict']}" unless verifier["verdict"] == "error"
+          abort "empty-chain trusted must be false" if verifier["trusted"] != false
+          abort "empty-chain must omit signer_key" if verifier.key?("signer_key")
           summary = packet.fetch("summary")
           abort "empty-chain receipt_count must be 0" unless summary["receipt_count"].to_i == 0
           totals = summary.fetch("totals")
