@@ -139,7 +139,7 @@ Track development in this repo and in Pipelock:
 
 ## Pull request reviews
 
-The repository owner can manually request a review by posting exactly `/review` on the chosen pull request. `/review deep` selects the deeper review profile. Other commenters cannot start this workflow.
+The repository owner can manually request a review by posting one of two exact commands on the chosen pull request: `/review` for the default profile or `/review deep` for the deeper profile. Comments with additional text do not trigger a review. Other commenters cannot start this workflow.
 
 The caller runs from the default branch and passes matching immutable workflow and reviewer-source pins. Manual workflow dispatch is deliberately unavailable. If a review does not appear, inspect the Actions run before retrying: source validation can fail before a status comment is created.
 
