@@ -137,6 +137,16 @@ Track development in this repo and in Pipelock:
 - https://github.com/luckyPipewrench/pipelock
 - https://pipelab.org/learn/action-receipt-spec/
 
+## Pull request reviews
+
+The repository owner can manually request a review by posting one of two exact commands on the chosen pull request: `/review` for the default profile or `/review deep` for the deeper profile. Comments with additional text do not trigger a review. Other commenters cannot start this workflow.
+
+The caller runs from the default branch and passes matching immutable workflow and reviewer-source pins. Manual workflow dispatch is deliberately unavailable. If a review does not appear, inspect the Actions run before retrying: source validation can fail before a status comment is created.
+
+The read-only caller check runs when the caller workflow, its contract test, or the check workflow changes. It checks the local caller shape and matching pins; it does not execute the external reviewer. The legacy local-runner tests do not define this caller contract.
+
+For source updates and recovery, follow the [shared reviewer guide](https://github.com/luckyPipewrench/pipelock/blob/3e8534e0dd621c62879238cc01d56f7e58e9d096/docs/guides/pr-review.md). A caller change takes effect after it reaches the default branch; a review of its own PR still uses the previous caller.
+
 ## License
 
 Apache 2.0.

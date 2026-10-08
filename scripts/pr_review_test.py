@@ -7,7 +7,6 @@ import unittest
 from unittest import mock
 
 SCRIPT_PATH = pathlib.Path(__file__).with_name("pr-review.py")
-WORKFLOW_PATH = SCRIPT_PATH.parents[1] / ".github" / "workflows" / "pr-review.yaml"
 SPEC = importlib.util.spec_from_file_location("pr_review", SCRIPT_PATH)
 if SPEC is None or SPEC.loader is None:
     raise RuntimeError(f"failed to load {SCRIPT_PATH}")
@@ -52,21 +51,6 @@ class RoutingTest(unittest.TestCase):
         with mock.patch.dict(pr_review.os.environ, {"PR_REVIEW_MODEL_FAST": "", "PR_REVIEW_MODEL_DEEP": ""}, clear=True):
             self.assertEqual(pr_review.model_for_mode("default"), "gpt-5.6-luna")
             self.assertEqual(pr_review.model_for_mode("deep"), "gpt-5.6-terra")
-
-    def test_workflow_uses_owner_gate_and_trusted_default_branch(self):
-        workflow = WORKFLOW_PATH.read_text(encoding="utf-8")
-        self.assertIn("github.event.comment.user.login == 'luckyPipewrench'", workflow)
-        self.assertIn("github.event.comment.author_association == 'OWNER'", workflow)
-        self.assertIn("github.event.issue.pull_request", workflow)
-        self.assertIn("ref: ${{ github.event.repository.default_branch }}", workflow)
-        self.assertIn("persist-credentials: false", workflow)
-        self.assertIn("timeout-minutes: 10", workflow)
-        self.assertIn("group: pr-review-${{ github.repository }}-${{ github.event.issue.number }}", workflow)
-        self.assertIn("cancel-in-progress: true", workflow)
-        self.assertIn("python -m unittest scripts/pr_review_test.py", workflow)
-        self.assertIn("PR_REVIEW_MODEL_FAST: ${{ vars.PR_REVIEW_MODEL_FAST }}", workflow)
-        self.assertIn("PR_REVIEW_MODEL_DEEP: ${{ vars.PR_REVIEW_MODEL_DEEP }}", workflow)
-        self.assertNotRegex(workflow, r"PR_REVIEW_MODEL_(?:FAST|DEEP): gpt-")
 
 
 class ResponseTest(unittest.TestCase):
